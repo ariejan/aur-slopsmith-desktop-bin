@@ -1,0 +1,43 @@
+name: Deploy to AUR
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - PKGBUILD
+      - .SRCINFO
+      - .github/workflows/deploy.yml
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate PKGBUILD in Arch container
+        run: |
+          docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash -c '
+            pacman -Sy --noconfirm namcap
+            useradd -m builder
+            chown -R builder:builder /pkg
+            sudo -u builder bash -c "
+              cd /pkg
+              namcap PKGBUILD
+              makepkg --printsrcinfo > /tmp/.SRCINFO.expected
+              diff -u .SRCINFO /tmp/.SRCINFO.expected
+            "
+          '
+
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: slopsmith-desktop-bin
+          pkgbuild: ./PKGBUILD
+          assets: |
+            .SRCINFO
+          commit_username: ${{ vars.AUR_USERNAME || 'ariejan' }}
+          commit_email: ${{ vars.AUR_EMAIL || 'ariejan.de.vroom@kabisa.nl' }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Sync from GitHub: ${{ github.sha }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519

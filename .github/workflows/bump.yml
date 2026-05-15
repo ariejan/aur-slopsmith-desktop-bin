@@ -1,0 +1,55 @@
+name: Bump on upstream release
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect latest upstream release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest=$(gh api repos/byrongamatos/slopsmith-desktop/releases/latest --jq .tag_name)
+          ver=${latest#v}
+          current=$(grep -Po '^pkgver=\K.*' PKGBUILD)
+          echo "latest=$ver"    >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          if [[ "$ver" == "$current" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump PKGBUILD + regen .SRCINFO
+        if: steps.upstream.outputs.skip == 'false'
+        run: |
+          NEW="${{ steps.upstream.outputs.latest }}"
+          URL="https://github.com/byrongamatos/slopsmith-desktop/releases/download/v${NEW}/slopsmith-desktop_${NEW}_amd64.deb"
+          curl -fsSL -o /tmp/pkg.deb "$URL"
+          SHA=$(sha256sum /tmp/pkg.deb | awk '{print $1}')
+          sed -i -E "s/^pkgver=.*/pkgver=${NEW}/" PKGBUILD
+          sed -i -E "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i -E "s/^sha256sums=\('[a-f0-9]+'\)/sha256sums=('${SHA}')/" PKGBUILD
+          docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash -c '
+            useradd -m b && chown -R b:b /pkg
+            sudo -u b makepkg --printsrcinfo > .SRCINFO
+          '
+
+      - name: Commit and push
+        if: steps.upstream.outputs.skip == 'false'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Bump to ${{ steps.upstream.outputs.latest }}"
+          git push
