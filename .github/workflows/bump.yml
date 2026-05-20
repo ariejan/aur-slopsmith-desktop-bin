@@ -40,10 +40,14 @@ jobs:
           sed -i -E "s/^pkgver=.*/pkgver=${NEW}/" PKGBUILD
           sed -i -E "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
           sed -i -E "s/^sha256sums=\('[a-f0-9]+'\)/sha256sums=('${SHA}')/" PKGBUILD
-          docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash -c '
-            useradd -m b && chown -R b:b /pkg
-            sudo -u b makepkg --printsrcinfo > .SRCINFO
-          '
+          HOST_UID=$(id -u)
+          HOST_GID=$(id -g)
+          docker run --rm -e HOST_UID="$HOST_UID" -e HOST_GID="$HOST_GID" \
+            -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash -c '
+              useradd -m b && chown -R b:b /pkg
+              sudo -u b makepkg --printsrcinfo > .SRCINFO
+              chown -R "$HOST_UID:$HOST_GID" /pkg
+            '
 
       - name: Commit and push
         if: steps.upstream.outputs.skip == 'false'
