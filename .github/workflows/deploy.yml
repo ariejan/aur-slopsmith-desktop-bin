@@ -7,11 +7,16 @@ on:
       - PKGBUILD
       - .SRCINFO
       - .github/workflows/deploy.yml
+  workflow_run:
+    workflows: ["Bump on upstream release"]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
 
